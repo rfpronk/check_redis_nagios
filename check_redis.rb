@@ -6,7 +6,7 @@ require 'redis'
 
 connectionOptions = { :host => "localhost", :port => 6379, :password => nil, :timeout => 5, :ssl => false, :ssl_params => {:ca_file => nil}}
 sentinel = nil
-desired_replica_count = 1
+min_replica_count = 1
 
 OptionParser.new do |opt|
   opt.banner = "Usage: #{$0} <options>"
@@ -17,7 +17,7 @@ OptionParser.new do |opt|
   opt.on('-S', '--sentinel [MASTER]', 'Connect to Sentinel and ask for MASTER') { |o| sentinel = o if o }
   opt.on('-T', '--tls', 'Connect to Redis using SSL/TLS') { |o| connectionOptions[:ssl] = true if o }
   opt.on('-C', '--ca [CA_FILE]', 'Verify servers against given CA when using -T (use system default trusted certs when not specified)') { |o| connectionOptions[:ssl_params][:ca_file] = o if o }
-  opt.on('-r', '--replicas [COUNT]', 'Minimum connected replicas for a master (Default: 1)') { |o| desired_replica_count = o.to_i if o }
+  opt.on('-r', '--replicas [COUNT]', 'Minimum connected replicas for a master (Default: 1)') { |o| min_replica_count = o.to_i if o }
   opt.on_tail("-h", "--help", "Show this message") do
     puts opt
     exit 0
@@ -31,11 +31,15 @@ error_msg = ""
 begin
   # Connecting to standalone Redis instance or through Sentinel?
   if sentinel
-    # TODO
-    @redis = Redis.new(connectionOptions)
+    url_prefix = connectionOptions[:ssl] ? "rediss://" : "redis://"
+    @redis = Redis.new(url: url_prefix + sentinel,
+                       sentinels: [{host: connectionOptions[:host], port: connectionOptions[:port]}],
+                       role: :master,
+                       password: connectionOptions[:password])
   else
     @redis = Redis.new(connectionOptions)
   end
+
   ping = @redis.ping
   if ping != "PONG"
       status_line = "Redis didn't respond to PING"
@@ -49,7 +53,7 @@ begin
     # Detect role
     if info["role"] == "master"
       status_line += ", connected replicas: " + info["connected_slaves"]
-      if info["connected_slaves"].to_i < desired_replica_count
+      if info["connected_slaves"].to_i < min_replica_count
         status_code = 1
         error_msg = "Not enough connected replicas: " + info["connected_slaves"]
       end
