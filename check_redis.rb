@@ -62,7 +62,7 @@ begin
         status_code = 2
         error_msg = "Not connected to master, received last data " + info["master_last_io_seconds_ago"] + "s ago"
       end
-      if info["master_last_io_seconds_ago"].to_i > 5
+      if info["master_last_io_seconds_ago"].to_i > 60
         status_code = 1
         error_msg = "Master didn't communicate in " + info["master_last_io_seconds_ago"] + "s"
       end
